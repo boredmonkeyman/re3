@@ -1,0 +1,114 @@
+name: reVC UWP APPX Build (GL3 Only)
+
+on:
+  pull_request:
+  push:
+  release:
+    types: [published]
+
+env:
+  GLEW_VER: "2.1.0"
+  GLFW_VER: "3.3.2"
+  GLEW_BASE: "glew-2.1.0"
+  GLFW_BASE: "glfw-3.3.2.bin.WIN64"
+  GLEW_FILE: "glew-2.1.0-win32.zip"
+  GLFW_FILE: "glfw-3.3.2.bin.WIN64.zip"
+  GLEW_URL: "https://github.com/nigels-com/glew/releases/download/glew-2.1.0/glew-2.1.0-win32.zip"
+  GLFW_URL: "https://github.com/glfw/glfw/releases/download/3.3.2/glfw-3.3.2.bin.WIN64.zip"
+
+jobs:
+  build:
+    runs-on: windows-2019
+    strategy:
+      matrix:
+        buildtype: [Debug, Release]  # Only specify build types
+    steps:
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v2
+
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Download GLEW
+      uses: carlosperate/download-file-action@v2
+      with:
+        file-url: ${{ env.GLEW_URL }}
+
+    - name: Download GLFW
+      uses: carlosperate/download-file-action@v2
+      with:
+        file-url: ${{ env.GLFW_URL }}
+
+    - name: Unpack archives
+      run: |
+        7z x ${{ env.GLEW_FILE }}
+        7z x ${{ env.GLFW_FILE }}
+
+    - name: Configure build
+      run: |
+        ./premake5 vs2019 --with-librw --glewdir=${{ env.GLEW_BASE }} --glfwdir64=${{ env.GLFW_BASE }}
+
+    - name: Build
+      run: |
+        msbuild -m build/reVC.sln /property:Configuration=${{ matrix.buildtype }} /property:Platform=win-amd64-librw_gl3_glfw-oal
+
+    - name: Create APPX package
+      run: |
+        # Ensure the necessary directories exist
+        mkdir -p AppxManifest
+        mkdir -p AppxPackage
+
+        # Copy the necessary files to the AppxPackage directory
+        cp -r ./bin/win-amd64-librw_gl3_glfw-oal/${{ matrix.buildtype }}/* AppxPackage/
+
+        # Create the AppxManifest.xml file
+        echo '<?xml version="1.0" encoding="utf-8"?>
+        <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+                 xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+                 xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+                 xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+                 IgnorableNamespaces="uap mp rescap">
+          <Identity Name="reVC" Publisher="CN=YourPublisher" Version="1.0.0.0" ProcessorArchitecture="x64" />
+          <Properties>
+            <DisplayName>reVC</DisplayName>
+            <PublisherDisplayName>YourPublisher</PublisherDisplayName>
+            <Logo>Assets\StoreLogo.png</Logo>
+          </Properties>
+          <Resources>
+            <Resource Language="en-us" />
+          </Resources>
+          <Dependencies>
+            <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.17134.0" MaxVersionTested="10.0.17134.0" />
+          </Dependencies>
+          <Capabilities>
+            <Capability Name="internetClient" />
+          </Capabilities>
+          <Applications>
+            <Application Id="App" Executable="reVC.exe" EntryPoint="Windows.FullTrustApplication">
+              <uap:VisualElements DisplayName="reVC" Description="reVC UWP App" BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+                <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+                <uap:SplashScreen Image="Assets\SplashScreen.png" />
+              </uap:VisualElements>
+            </Application>
+          </Applications>
+        </Package>' > AppxManifest/AppxManifest.xml
+
+        # Create the APPX package
+        MakeAppx.exe pack /d AppxPackage /p reVC_${{ matrix.buildtype }}_win-amd64-librw_gl3_glfw-oal.appx /l /o /v
+
+    - name: Pack artifacts
+      run: |
+        7z a reVC_${{ matrix.buildtype }}_win-amd64-librw_gl3_glfw-oal.zip ./bin/win-amd64-librw_gl3_glfw-oal/${{ matrix.buildtype }}/*
+
+    - name: Upload artifact to actions
+      uses: actions/upload-artifact@v4
+      with:
+        name: reVC_${{ matrix.buildtype }}_win-amd64-librw_gl3_glfw-oal
+        path: ./bin/win-amd64-librw_gl3_glfw-oal/${{ matrix.buildtype }}
+
+    - name: Upload APPX package to actions
+      uses: actions/upload-artifact@v4
+      with:
+        name: reVC_${{ matrix.buildtype }}_win-amd64-librw_gl3_glfw-oal_APPX
+        path: reVC_${{ matrix.buildtype }}_win-amd64-librw_gl3_glfw-oal.appx
